@@ -78,6 +78,16 @@ actor.update(deltaSeconds);
 
 El GLB y el JSON son activos portables y pueden importarse/adaptarse en Unity o Unreal. `CyborgController.js` es un controlador JavaScript de Three.js: no se ejecuta directamente dentro de Unity/Unreal. Para esas plataformas se debe implementar un adaptador equivalente en C# (Unity) o C++/Blueprints (Unreal), reutilizando el mismo modelo, nombres de animación y parámetros de configuración.
 
+## Agarre automático de bordes (v2)
+
+- Al saltar hacia una plataforma, el sistema comprueba automáticamente la altura de la cornisa, la proximidad lateral y la orientación del personaje.
+- Si la cornisa es alcanzable mientras el personaje cae o se aproxima al ápice del salto, entra en `hang` y alinea el cuerpo con el borde.
+- En `hang`, izquierda/derecha desplazan al personaje; al llegar a una esquina compatible, `CornerTraversalSystem` cambia a la cara perpendicular sin pedir otro botón.
+- `W` (o avanzar con el mando) inicia la subida; `E` permite soltarse. `H` conserva la transición manual de colgado a escalada que ya existía.
+- La detección usa los AABB de `solids` que ya emplea el sistema de colisiones. No todos los elementos del escenario son automáticamente escalables: deben tener una cara y altura alcanzables.
+
+Los umbrales están centralizados en el constructor de `EdgeDetectionSystem` y `CornerTraversalSystem`, para poder ajustarlos sin tocar el bucle de gameplay.
+
 ## Próxima fase recomendada
 
 1. Extraer `MovementSystem`, `ClimbingSystem`, `SwimmingSystem`, `CombatSystem`, `CameraController` y `World/AI` desde `main.js`, manteniendo pruebas de regresión por estado.

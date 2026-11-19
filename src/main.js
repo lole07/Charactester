@@ -4,6 +4,8 @@ import { GLTFLoader } from 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/
 import * as SkeletonUtils from 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/jsm/utils/SkeletonUtils.js';
 import { CyborgController } from './CyborgController.js';
 import { GamepadController } from './GamepadController.js';
+import { EdgeDetectionSystem } from './systems/EdgeDetectionSystem.js';
+import { CornerTraversalSystem } from './systems/CornerTraversalSystem.js';
 
 const CFG=await fetch(new URL('../config/cyborg.json',import.meta.url)).then(r=>{if(!r.ok)throw new Error('No se pudo leer config/cyborg.json');return r.json()});
 const T=THREE,V3=T.Vector3,$=i=>document.getElementById(i),R=.35;
@@ -128,11 +130,13 @@ addEventListener('wheel',e=>{cd=Math.max(2.5,Math.min(12,cd+e.deltaY*.004))});
 const ang=(a,b,k)=>{const d=((b-a+Math.PI)%(2*Math.PI)+2*Math.PI)%(2*Math.PI)-Math.PI;return a+d*k};
 // ---------- personaje ----------
 let gltf,clips={},pl,en,p,orbs=[];
+const edgeDetection = new EdgeDetectionSystem({ THREE: T });
+const cornerTraversal = new CornerTraversalSystem({ THREE: T });
 function mk(m){return new CyborgController(m,{THREE:T,config:CFG,clips, onAnimation:(name,actor)=>{document.querySelectorAll('#list button').forEach(b=>b.classList.toggle('on',b.dataset.n==name&&actor===p))}})}
 function prep(m){m.scale.setScalar(1.8);m.traverse(o=>{if(o.isMesh){o.castShadow=true;o.frustumCulled=false}})}
 function start(g){gltf=g;g.animations.forEach(c=>{clips[c.name]=c;c.tracks.forEach(t=>{if(/Hips\.position$/.test(t.name)){const v=t.values;for(let i=3;i<v.length;i+=3){v[i]=v[0];v[i+1]=v[1]}}})});
  prep(g.scene);p=mk(g.scene);scene.add(p.root);
- pl={pos:p.root.position,vel:new V3(),yaw:Math.PI,st:'ground',crouch:false,combat:false,vy:0,air:0,peak:0,combo:0,comboT:0,hp:100,o2:100,car:null,jb:0,coy:0,vj:0,inv:0,deadT:0,spawn:new V3(),n:new V3(0,0,1),b:null,leap:0};
+ pl={pos:p.root.position,vel:new V3(),yaw:Math.PI,st:'ground',crouch:false,combat:false,vy:0,air:0,peak:0,combo:0,comboT:0,hp:100,o2:100,car:null,jb:0,coy:0,vj:0,inv:0,deadT:0,spawn:new V3(),n:new V3(0,0,1),b:null,leap:0,cornerCooldown:0};
  SPAWNS.forEach(z=>mkEnemy(z[0],z[1],z[2]));
  Object.keys(clips).sort((a,b)=>a.toLowerCase()<b.toLowerCase()?-1:1).forEach(n=>{const b=document.createElement('button');b.textContent=n;b.dataset.n=n;
   b.onclick=()=>{b.blur();pl.st='manual';p.play(n,{restart:1})};$('list').appendChild(b)});
@@ -198,7 +202,10 @@ function step(dt){
   if(pressed.KeyF){for(const b of solids){if(!b.cover||b.top>2)continue;const n=near(b,q);if(n.distanceTo(new V3(q.x,0,q.z))<1.2){pl.b=b;pl.n.set(q.x-n.x,0,q.z-n.z).normalize();pl.crouch=true;attach(.5);v.set(0,0,0);act('stand to cover',1.1,{after:'cover'});break}}}
   if(pl.st=='ground'){const sv=Math.hypot(v.x,v.z);if(spd>0&&clip!='Idle'&&clip!='Offensive Idle'&&clip!='Crouching Idle')ts*=Math.max(.65,Math.min(1.35,sv/spd));p.play(clip,{ts})}break}
  case'air':{pl.air+=dt;pl.leap-=dt;if(pl.coy>0&&pl.jb>0&&!pl.jumped){jump();break}pl.vy-=(pl.vy>0&&pl.vj&&!(k.Space||PAD.jump)?CFG.cutG:CFG.grav)*dt;const as=pl.asp||4.5,kk=1-Math.exp(-(has?CFG.air:1.2)*dt);v.x+=((has?mx*as:0)-v.x)*kk;v.z+=((has?mz*as:0)-v.z)*kk;if(has)pl.yaw=ang(pl.yaw,Math.atan2(mx,mz),1-Math.exp(-9*dt));
-  q.x+=v.x*dt;q.z+=v.z*dt;collide(q);q.y+=pl.vy*dt;pl.peak=Math.max(pl.peak,q.y);
+  q.x+=v.x*dt;q.z+=v.z*dt;q.y+=pl.vy*dt;
+  const ledge=edgeDetection.detect({position:q,velocity:v,verticalVelocity:pl.vy,yaw:pl.yaw,solids});
+  if(edgeDetection.acquire(pl,ledge)){p.play('Braced Hang Shimmy',{fade:.1});break}
+  collide(q);pl.peak=Math.max(pl.peak,q.y);
   if(!(pl.jumped&&pl.air<.55))p.play('falling idle');
   if(pressed.KeyE&&grab())break;
   if(wet(q.x,q.z)&&q.y<-.45&&pl.leap<=0){pl.st='swim';pl.sy=Math.max(-5,pl.vy*.45);pl.vy=0;pl.crouch=false;break}
@@ -226,8 +233,14 @@ function step(dt){
    if(q.y<=ground(q.x,q.z,q.y)+.02&&iz<0){pl.st='ground';break}
    if(q.y>=b.top-1.75){if(rope){release();break}q.x-=pl.n.x*(.35+.7);q.z-=pl.n.z*(.35+.7);q.y=b.top;pl.n.set(0,0,0);pl.vel.set(0,0,0);act('cover to stand',1.1);break}
    if(pressed.KeyH&&!rope)pl.st='hang'}
-  else{q.x+=pl.n.z*ix*1.0*dt;q.z-=pl.n.x*ix*1*dt;p.play(ix<0?'Left Shimmy':ix>0?'Right Shimmy':'Braced Hang Shimmy',{ts:ix||0});if(pressed.KeyH)pl.st='climb'}
-  attach(.35);break}
+  else{
+   pl.cornerCooldown=Math.max(0,(pl.cornerCooldown||0)-dt);
+   q.x+=pl.n.z*ix*1.0*dt;q.z-=pl.n.x*ix*1.0*dt;
+   if(pl.cornerCooldown<=0&&Math.abs(ix)>.15)cornerTraversal.tryTransition(pl,solids,ix);
+   p.play(ix<-.08?'Left Shimmy':ix>.08?'Right Shimmy':'Braced Hang Shimmy',{ts:Math.abs(ix)>.08?Math.abs(ix):1});
+   if(pressed.KeyH||iz>.72){pl.st='climb';pl.cornerCooldown=.12}
+  }
+  attach(.35);if(pl.st=='hang')q.y=pl.b.top-1.48;break}
  case'cover':{pl.yaw=Math.atan2(pl.n.x,pl.n.z);if(pressed.KeyF){pl.crouch=false;act('cover to stand',1.1);break}
   q.x+=-pl.n.z*ix*1.6*dt;q.z+=pl.n.x*ix*1.6*dt;attach(.5);p.play(ix<0?'left cover sneak':ix>0?'right cover sneak':'Crouching Idle');break}
  }
