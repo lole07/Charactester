@@ -1,4 +1,7 @@
 {
+  "ledge": 0.75,
+  "dz": 0.15,
+  "swimV": 2.8,
   "walk": 1.7,
   "run": 4.4,
   "sprint": 7,
@@ -22,8 +25,8 @@
   "fov": 60,
   "dist": 5.5,
   "gamepad": {
-    "deadzone": 0.16,
-    "cameraDeadzone": 0.14,
+    "deadzone": 0.15,
+    "cameraDeadzone": 0.15,
     "cameraSpeed": 3,
     "cameraSpeedY": 2,
     "buttonMap": {

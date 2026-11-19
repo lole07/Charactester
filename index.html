@@ -1,10 +1,8 @@
 <!doctype html>
-<!DOCTYPE html>
-
-<html lang="es"><head><meta charset="utf-8"/>
-<meta content="width=device-width, initial-scale=1, viewport-fit=cover" name="viewport"/>
-<title>Cyborg - Campo de pruebas</title>
-<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;700&amp;display=swap" rel="stylesheet"/>
+<html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Cyborg - Campo de pruebas v4</title>
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;700&display=swap" rel="stylesheet">
 <style>
 :root{--bg:#0d1417;--fg:#dff6f2;--ac:#35e0c8;--pn:rgba(8,16,20,.8);--wn:#ff7a59;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0d1417}}
@@ -30,7 +28,7 @@ canvas{display:block;width:100%;height:100%}
 #msg{left:50%;top:50%;transform:translate(-50%,-50%);text-align:center;font-size:20px}
 </style></head><body>
 <canvas id="c"></canvas>
-<div class="pn" id="hud"><b id="st">Cargando</b><div id="cl"></div><div id="al"></div><div id="hp"><i id="hpp"></i></div><div id="o2w" style="display:none;height:6px;background:#2a3a40;margin-top:4px"><i id="o2" style="display:block;height:100%;background:#4ab8ff"></i></div><div id="padStatus" style="font-size:12px;margin-top:4px;color:#9aa">Mando: buscando…</div></div>
+<div class="pn" id="hud"><b id="st">Cargando</b><div id="cl"></div><div id="al"></div><div id="pad" style="font-size:13px;opacity:.85;margin-top:4px"></div><div id="hp"><i id="hpp"></i></div><div id="o2w" style="display:none;height:6px;background:#2a3a40;margin-top:4px"><i id="o2" style="display:block;height:100%;background:#4ab8ff"></i></div></div>
 <div class="pn hid" id="help">
 <div><kbd>WASD</kbd>mover (cámara con el mouse)</div>
 <div><kbd>Shift</kbd>correr rápido <kbd>Z</kbd>caminar <kbd>C</kbd>agacharse</div>
@@ -39,15 +37,25 @@ canvas{display:block;width:100%;height:100%}
 <div><kbd>1</kbd>patada giratoria <kbd>2</kbd>patada voladora <kbd>3</kbd>patada alta</div>
 <div><kbd>4</kbd>hechizo <kbd>5</kbd>boxeo</div>
 <div><kbd>Q</kbd>esquivar (rodar, invulnerable un instante)</div>
-<div><kbd>E</kbd>trepar pared o cuerda <kbd>H</kbd>colgarse y desplazarse</div>
+<div><kbd>E</kbd>trepar pared o cuerda <kbd>H</kbd>colgarse y desplazarse</div><div>Esquinas: salta hacia un borde alto y te agarras solo. W/Espacio subir, C/E soltarte, A/D desplazarte. Buceo: C en superficie = zambullirse; mira abajo/arriba para bajar/subir.</div><div>Mando: A saltar, B agacharse/zambullirse/soltarse, X combo, Y trepar/auto, RT correr, LB cubrirse, RB pelea, LT colgarse, stick der. cámara.</div>
 <div><kbd>F</kbd>cubrirse tras muro bajo <kbd>K</kbd>morir / levantarse <kbd>T</kbd>reiniciar</div>
 <div><kbd>U</kbd><kbd>I</kbd><kbd>O</kbd><kbd>P</kbd><kbd>6</kbd><kbd>7</kbd><kbd>8</kbd><kbd>9</kbd>ir a zonas: movimiento, físicas, sigilo, arena, parkour, bosque, lago, autos <kbd>Y</kbd>reiniciar enemigos</div><div>Auto: <kbd>E</kbd> entrar o salir, W/S acelerar, A/D girar, Espacio freno de mano, Shift turbo. Nadando: Espacio sube, C baja (mando: L3 cambia de zona).</div><div>Sigilo: agáchate en la hierba o cúbrete con F. Correr hace ruido.</div><div>Mando: stick izq mover, stick der cámara, A saltar, B agacharse, X atacar, Y trepar, RT correr, LB cubrirse, RB pelea, LT colgarse, cruceta y R3 habilidades, Start reaparecer</div><div><kbd>Tab</kbd>mostrar u ocultar lista de animaciones</div></div>
 <div class="pn" id="panel"><h3>Animaciones</h3><div id="list"></div></div>
-<div id="ctl"><button id="bUI" title="Tab">Ocultar UI</button><button class="on" id="bH">HUD</button><button id="bHe">Controles</button><button class="on" id="bA">Animaciones</button><button id="bC">Ajustes</button></div>
-<div class="pn hid" id="cfg"><h3>Ajustes de jugabilidad</h3><div id="cl2"></div><div class="row"><button id="cX">Exportar JSON</button><button id="cI">Importar</button><button id="cR">Restablecer</button></div><textarea class="hid" id="cT" spellcheck="false"></textarea></div>
+<div id="ctl"><button id="bUI" title="Tab">Ocultar UI</button><button id="bH" class="on">HUD</button><button id="bHe">Controles</button><button id="bA" class="on">Animaciones</button><button id="bC">Ajustes</button></div>
+<div class="pn hid" id="cfg"><h3>Ajustes de jugabilidad</h3><div id="cl2"></div><div class="row"><button id="cX">Exportar JSON</button><button id="cI">Importar</button><button id="cR">Restablecer</button></div><textarea id="cT" class="hid" spellcheck="false"></textarea></div>
 <div class="pn" id="msg">Cargando personaje...</div>
-
-
-
-
-<script src="./src/main.js" type="module"></script></body></html>
+<script>
+/* Diagnóstico de arranque: muestra en pantalla por qué no abre (en vez de quedarse en "Cargando"). */
+(function(){
+  var m=document.getElementById('msg');
+  function fail(t){if(m&&/^Cargando/.test(m.textContent)){m.style.display='';m.textContent=t}}
+  if(location.protocol==='file:'){
+    m.innerHTML='Esta versión modular necesita abrirse desde una URL https (por ejemplo GitHub Pages).<br>Sin servidor, usa la <a style="color:var(--ac)" href="legacy/Cyborg_-_Campo_de_pruebas_v4.html">versión de un solo archivo</a>.';
+    return;
+  }
+  window.addEventListener('error',function(e){fail('No se pudo iniciar: '+((e.error&&e.error.message)||e.message||'error al cargar un archivo')+' (revisa la consola F12)')},true);
+  window.addEventListener('unhandledrejection',function(e){fail('No se pudo iniciar: '+((e.reason&&e.reason.message)||e.reason))});
+})();
+</script>
+<script src="./src/main.js" type="module"></script>
+</body></html>

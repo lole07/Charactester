@@ -4,8 +4,6 @@ import { GLTFLoader } from 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/
 import * as SkeletonUtils from 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/jsm/utils/SkeletonUtils.js';
 import { CyborgController } from './CyborgController.js';
 import { GamepadController } from './GamepadController.js';
-import { EdgeDetectionSystem } from './systems/EdgeDetectionSystem.js';
-import { CornerTraversalSystem } from './systems/CornerTraversalSystem.js';
 
 const CFG=await fetch(new URL('../config/cyborg.json',import.meta.url)).then(r=>{if(!r.ok)throw new Error('No se pudo leer config/cyborg.json');return r.json()});
 const T=THREE,V3=T.Vector3,$=i=>document.getElementById(i),R=.35;
@@ -130,13 +128,11 @@ addEventListener('wheel',e=>{cd=Math.max(2.5,Math.min(12,cd+e.deltaY*.004))});
 const ang=(a,b,k)=>{const d=((b-a+Math.PI)%(2*Math.PI)+2*Math.PI)%(2*Math.PI)-Math.PI;return a+d*k};
 // ---------- personaje ----------
 let gltf,clips={},pl,en,p,orbs=[];
-const edgeDetection = new EdgeDetectionSystem({ THREE: T });
-const cornerTraversal = new CornerTraversalSystem({ THREE: T });
 function mk(m){return new CyborgController(m,{THREE:T,config:CFG,clips, onAnimation:(name,actor)=>{document.querySelectorAll('#list button').forEach(b=>b.classList.toggle('on',b.dataset.n==name&&actor===p))}})}
 function prep(m){m.scale.setScalar(1.8);m.traverse(o=>{if(o.isMesh){o.castShadow=true;o.frustumCulled=false}})}
 function start(g){gltf=g;g.animations.forEach(c=>{clips[c.name]=c;c.tracks.forEach(t=>{if(/Hips\.position$/.test(t.name)){const v=t.values;for(let i=3;i<v.length;i+=3){v[i]=v[0];v[i+1]=v[1]}}})});
  prep(g.scene);p=mk(g.scene);scene.add(p.root);
- pl={pos:p.root.position,vel:new V3(),yaw:Math.PI,st:'ground',crouch:false,combat:false,vy:0,air:0,peak:0,combo:0,comboT:0,hp:100,o2:100,car:null,jb:0,coy:0,vj:0,inv:0,deadT:0,spawn:new V3(),n:new V3(0,0,1),b:null,leap:0,cornerCooldown:0};
+ pl={pos:p.root.position,vel:new V3(),yaw:Math.PI,st:'ground',crouch:false,combat:false,vy:0,air:0,peak:0,combo:0,comboT:0,hp:100,o2:100,car:null,jb:0,coy:0,vj:0,inv:0,deadT:0,spawn:new V3(),n:new V3(0,0,1),b:null,leap:0,hangT:1,lcd:0};
  SPAWNS.forEach(z=>mkEnemy(z[0],z[1],z[2]));
  Object.keys(clips).sort((a,b)=>a.toLowerCase()<b.toLowerCase()?-1:1).forEach(n=>{const b=document.createElement('button');b.textContent=n;b.dataset.n=n;
   b.onclick=()=>{b.blur();pl.st='manual';p.play(n,{restart:1})};$('list').appendChild(b)});
@@ -151,7 +147,7 @@ function mkEnemy(x,z,o){const m=SkeletonUtils.clone(gltf.scene);prep(m);const ma
  const a=mk(m);a.root.position.set(x,ground(x,z,1),z);scene.add(a.root);const e={a,pos:a.root.position,hp:o.dummy?100:60,st:o.dummy?'dummy':'patrol',t:0,vel:new V3(),fl:0,mats,yaw:o.yaw||0,o,wi:0,al:0,cd:0,last:new V3(),dummy:!!o.dummy,home:new V3(x,ground(x,z,1),z)};
  a.play(o.dummy?'Offensive Idle':'Idle');E.push(e)}
 function resetEnemies(){E.forEach(e=>{e.hp=e.dummy?100:60;e.pos.copy(e.home);e.vel.set(0,0,0);e.al=0;e.wi=0;e.st=e.dummy?'dummy':'patrol';e.yaw=e.o.yaw||0;e.a.play(e.dummy?'Offensive Idle':'Idle',{restart:1})})}
-function hurtPlayer(d,k){if(pl.inv>0||pl.st=='dead')return;pl.hp-=d;pl.inv=.7;sh=.35;
+function hurtPlayer(d,k){if(pl.inv>0||pl.st=='dead')return;pl.hp-=d;pl.inv=.7;sh=.35;rumble(180,.7,.5);
  if(pl.hp<=0){pl.hp=0;pl.st='dead';p.root.visible=true;pl.car=null;pl.deadT=0;pl.vel.set(0,0,0);p.play('Death',{once:1,restart:1});return}
  if(pl.st=='climb'||pl.st=='hang'){release();return}
  if(pl.st=='ground'||pl.st=='act'||pl.st=='cover'){pl.crouch=false;pl.vel.copy(k).multiplyScalar(3);act('Receive Uppercut To The Face',.6,{canc:.55,ts:1.2})}}
@@ -170,11 +166,17 @@ function grab(){for(const b of solids){if(!b.climb||pl.pos.y>b.top-1)continue;co
  pl.n.set(pl.pos.x-q.x,0,pl.pos.z-q.z);if(pl.n.lengthSq()<.01)pl.n.set(0,0,1);pl.n.normalize();pl.st='climb';pl.vy=0;pl.vel.set(0,0,0);attach(.35);return 1}}}
 function attach(off){const q=near(pl.b,pl.pos),d=new V3(pl.pos.x-q.x,0,pl.pos.z-q.z);if(d.length()>.01)pl.n.copy(d.normalize());pl.pos.x=q.x+pl.n.x*off;pl.pos.z=q.z+pl.n.z*off}
 function release(){pl.st='air';pl.vel.copy(pl.n).multiplyScalar(1.5);pl.vy=0;pl.peak=pl.pos.y;pl.air=.3;pl.jumped=false}
+// ---------- esquinas ----------
+function ledge(){if(pl.lcd>0||pl.vy>3)return 0;const f=fwd();for(const b of solids){if(b.cover||b.top<1.6||b.climb=='rope')continue;const h=pl.pos.y+1.75-b.top;if(h<-.35||h>.4)continue;
+ const n=near(b,pl.pos),dx=n.x-pl.pos.x,dz=n.z-pl.pos.z,l=Math.hypot(dx,dz);if(l>CFG.ledge||l<.01||(dx*f.x+dz*f.z)/l<.3)continue;
+ pl.b=b;pl.n.set(-dx,0,-dz).normalize();pl.st='hang';pl.vy=0;pl.vel.set(0,0,0);pl.hangT=0;pl.pos.y=b.top-1.75;attach(.35);p.play('Braced Hang Shimmy',{ts:0,restart:1,fade:.08});rumble(70,.3,.3);return 1}return 0}
+function mantle(){const b=pl.b,q=pl.pos,c=clips['cover to stand'];pl.st='mantle';pl.mT=0;pl.m0=q.clone();pl.m1=new V3(q.x-pl.n.x*1.05,b.top,q.z-pl.n.z*1.05);p.play('cover to stand',{once:1,restart:1,ts:Math.min(1.1,c.duration)/.65,fade:.1})}
+// ---------- mando ----------
 // ---------- bucle del jugador ----------
 function step(dt){
  const k=keys,pm=Math.hypot(PAD.x,PAD.y),pu=pm>.18,ix=pu?PAD.x/Math.max(1,pm):(k.KeyD?1:0)-(k.KeyA?1:0),iz=pu?-PAD.y/Math.max(1,pm):(k.KeyW?1:0)-(k.KeyS?1:0),mag=pu?Math.min(1,pm):1,fx=-Math.sin(cy),fz=-Math.cos(cy);
  let mx=ix*-fz+iz*fx,mz=ix*fx+iz*fz;const has=!!(ix||iz);if(has){const l=Math.hypot(mx,mz);mx/=l;mz/=l}
- pl.hasIn=has;pl.inYaw=Math.atan2(mx,mz);const q=pl.pos,v=pl.vel;pl.comboT-=dt;pl.inv-=dt;if(pressed.Space)pl.jb=CFG.buf;pl.jb-=dt;pl.coy-=dt;if(q.y<-35&&pl.st!='drive'&&pl.st!='dead'){q.copy(pl.spawn);v.set(0,0,0);pl.vy=0;pl.hp=Math.max(1,pl.hp-20);pl.st='ground';pl.crouch=false;toast('Caíste al vacío')}if(pl.st=='dead'&&(pl.deadT+=dt)>4){q.copy(pl.spawn);pl.hp=100;v.set(0,0,0);pl.crouch=false;resetEnemies();act('getting up',2.6,{});pl.inv=2}
+ pl.hasIn=has;pl.inYaw=Math.atan2(mx,mz);const q=pl.pos,v=pl.vel;pl.comboT-=dt;pl.inv-=dt;pl.lcd-=dt;if(pressed.Space)pl.jb=CFG.buf;pl.jb-=dt;pl.coy-=dt;if(q.y<-35&&pl.st!='drive'&&pl.st!='dead'){q.copy(pl.spawn);v.set(0,0,0);pl.vy=0;pl.hp=Math.max(1,pl.hp-20);pl.st='ground';pl.crouch=false;toast('Caíste al vacío')}if(pl.st=='dead'&&(pl.deadT+=dt)>4){q.copy(pl.spawn);pl.hp=100;v.set(0,0,0);pl.crouch=false;resetEnemies();act('getting up',2.6,{});pl.inv=2}
  if(pressed.Next){zi=(zi+1)%ZN.length;pressed[ZN[zi]]=1}
  for(const c in TP)if(pressed[c]){pl.spawn.set(TP[c][0],ground(TP[c][0],TP[c][1],1),TP[c][1]);pressed.KeyT=1}if(pressed.KeyT){q.copy(pl.spawn);pl.hp=100;p.root.visible=true;pl.car=null;v.set(0,0,0);pl.st='ground';pl.crouch=false}
  if(pressed.KeyK){if(pl.st=='dead'){pl.hp=100;act('getting up',2.6,{})}else{pl.st='dead';pl.deadT=0;v.set(0,0,0);p.play('Death',{once:1,restart:1})}}
@@ -202,24 +204,21 @@ function step(dt){
   if(pressed.KeyF){for(const b of solids){if(!b.cover||b.top>2)continue;const n=near(b,q);if(n.distanceTo(new V3(q.x,0,q.z))<1.2){pl.b=b;pl.n.set(q.x-n.x,0,q.z-n.z).normalize();pl.crouch=true;attach(.5);v.set(0,0,0);act('stand to cover',1.1,{after:'cover'});break}}}
   if(pl.st=='ground'){const sv=Math.hypot(v.x,v.z);if(spd>0&&clip!='Idle'&&clip!='Offensive Idle'&&clip!='Crouching Idle')ts*=Math.max(.65,Math.min(1.35,sv/spd));p.play(clip,{ts})}break}
  case'air':{pl.air+=dt;pl.leap-=dt;if(pl.coy>0&&pl.jb>0&&!pl.jumped){jump();break}pl.vy-=(pl.vy>0&&pl.vj&&!(k.Space||PAD.jump)?CFG.cutG:CFG.grav)*dt;const as=pl.asp||4.5,kk=1-Math.exp(-(has?CFG.air:1.2)*dt);v.x+=((has?mx*as:0)-v.x)*kk;v.z+=((has?mz*as:0)-v.z)*kk;if(has)pl.yaw=ang(pl.yaw,Math.atan2(mx,mz),1-Math.exp(-9*dt));
-  q.x+=v.x*dt;q.z+=v.z*dt;q.y+=pl.vy*dt;
-  const ledge=edgeDetection.detect({position:q,velocity:v,verticalVelocity:pl.vy,yaw:pl.yaw,solids});
-  if(edgeDetection.acquire(pl,ledge)){p.play('Braced Hang Shimmy',{fade:.1});break}
-  collide(q);pl.peak=Math.max(pl.peak,q.y);
+  q.x+=v.x*dt;q.z+=v.z*dt;collide(q);q.y+=pl.vy*dt;pl.peak=Math.max(pl.peak,q.y);
   if(!(pl.jumped&&pl.air<.55))p.play('falling idle');
-  if(pressed.KeyE&&grab())break;
+  if(pressed.KeyE&&grab())break;if(ledge())break;
   if(wet(q.x,q.z)&&q.y<-.45&&pl.leap<=0){pl.st='swim';pl.sy=Math.max(-5,pl.vy*.45);pl.vy=0;pl.crouch=false;break}
   const g=ground(q.x,q.z,q.y);
   if(pl.vy<=0&&q.y<=g){q.y=g;const d=pl.peak-g,sp=Math.hypot(v.x,v.z);pl.vy=0;
    if(d>6){v.set(0,0,0);if(d>8)hurtPlayer(Math.min(60,(d-8)*7),v);if(pl.st!='dead')act('hard landing',1.4,{canc:.55})}else if(d>2.8){if(sp>2.5){v.copy(fwd()).multiplyScalar(5.5);act('falling to roll',1.4,{move:1,canc:.4,ts:1.2})}else{v.set(0,0,0);act('Falling To Landing',.9,{canc:.3,ts:1.2})}}else{pl.st='ground';if(pl.jb>0)jump()}}
   break}
- case'swim':{const dash=k.ShiftLeft||PAD.sprint,sp=dash?4.2:2.8,fl=base(q.x,q.z),dn=k.KeyC||PAD.dive,up=k.Space||PAD.jump;pl.crouch=false;pl.asp=4.5;
+ case'swim':{const dash=k.ShiftLeft||PAD.sprint,sp=dash?CFG.swimV*1.5:CFG.swimV,fl=base(q.x,q.z),dn=k.KeyC||PAD.dive,up=k.Space||PAD.jump;pl.crouch=false;pl.asp=4.5;
   if(has)pl.yaw=ang(pl.yaw,Math.atan2(mx,mz),1-Math.exp(-10*dt));
   const kk=1-Math.exp(-(has?7:3.5)*dt);v.x+=((has?mx*sp:0)-v.x)*kk;v.z+=((has?mz*sp:0)-v.z)*kk;q.x+=v.x*dt;q.z+=v.z*dt;
   if(inPool(q.x,q.z,.5)){q.x=Math.min(Math.max(q.x,P.x0+.2),P.x1-.2);q.z=Math.min(Math.max(q.z,P.z0+.2),P.z1-.2)}
-  const ty=dn?-3:up?3:1.2;pl.sy=(pl.sy||0)+(ty-(pl.sy||0))*(1-Math.exp(-6*dt));q.y+=pl.sy*dt;q.y=Math.min(-.95,Math.max(fl+.15,q.y));
+  if(pressed.KeyC&&q.y>-1.8)pl.sy=-4.5;const sub=q.y<-1.6,ty=dn?-3.2:up?3:sub?(has?Math.max(-3.2,Math.min(3,-iz*(cp-.35)*5))*(dash?1.3:1):-.25):1.2;pl.sy=(pl.sy||0)+(ty-(pl.sy||0))*(1-Math.exp(-6*dt));q.y+=pl.sy*dt;q.y=Math.min(-.95,Math.max(fl+.15,q.y));
   p.play(has?'Swimming':'Treading Water',{ts:has&&dash?1.35:1});
-  if(q.y<-1.8){pl.o2-=dt*5;if(pl.o2<=0){pl.o2=0;hurtPlayer(8,v)}}
+  if(q.y<-1.8){pl.o2-=dt*5;if(pl.o2<=0){pl.o2=0;hurtPlayer(8,v)}}else pl.o2=Math.min(100,pl.o2+dt*40);
   {const dx=has?mx:Math.sin(pl.yaw),dz=has?mz:Math.cos(pl.yaw),ax=q.x+dx*1.1,az=q.z+dz*1.1,ga=ground(ax,az,.6);
    if(q.y>-1.3&&ga-q.y>.35&&ga<=.7&&!wet(ax,az)&&(has||pressed.Space)){pl.st='air';pl.vj=0;pl.vy=8.4;pl.leap=.7;pl.air=0;pl.peak=q.y;pl.jumped=false;v.set(dx*3.2,0,dz*3.2);pl.sy=0;p.play('jump',{once:1,restart:1,fade:.1});break}}
   if(!wet(q.x,q.z)){pl.st='ground';pl.sy=0}break}
@@ -227,25 +226,27 @@ function step(dt){
  case'act':{pl.actT+=dt;if(pl.canc!=null&&pl.actT>pl.actEnd*pl.canc&&(has||pl.jb>0)){pl.st=pl.after||'ground';pl.after=null;pl.hitDone=0;break}if(pl.hitAt!=null&&pl.actT>=pl.hitAt){pl.hitDone=1;if(pl.sweep){if(pl.actT<pl.hitAt+.2)pl.onHit&&pl.onHit()}else if(!pl.fired){pl.fired=1;pl.onHit&&pl.onHit()}}
   v.multiplyScalar(Math.exp(-(pl.actMove?2.5:12)*dt));q.x+=v.x*dt;q.z+=v.z*dt;collide(q);q.y=ground(q.x,q.z,q.y);
   if(pl.actT>=pl.actEnd){pl.st=pl.after||'ground';pl.after=null;if(pl.st=='ground')pl.hitDone=0}break}
+ case'hang':{const b=pl.b;pl.hangT+=dt;pl.yaw=Math.atan2(-pl.n.x,-pl.n.z);
+  if(pressed.KeyE||pressed.KeyC||(iz<-.6&&pl.hangT>.35)){release();pl.lcd=.6;break}
+  if(pl.hangT>.15&&(iz>.6||pl.jb>0)){pl.jb=0;mantle();break}
+  if(pressed.KeyH&&b.climb){pl.st='climb';break}
+  {const s=has?Math.max(-1,Math.min(1,mx*pl.n.z-mz*pl.n.x)):0,sx=Math.abs(s)<.3?0:s;q.x+=pl.n.z*sx*dt;q.z-=pl.n.x*sx*dt;p.play(sx<0?'Left Shimmy':sx>0?'Right Shimmy':'Braced Hang Shimmy',{ts:sx||0})}
+  attach(.35);break}
+ case'mantle':{pl.mT+=dt;const t=Math.min(1,pl.mT/.65),a=pl.m0,c=pl.m1,u=sm((t-.35)/.65);q.y=a.y+(c.y-a.y)*sm(t/.7);q.x=a.x+(c.x-a.x)*u;q.z=a.z+(c.z-a.z)*u;pl.yaw=Math.atan2(-pl.n.x,-pl.n.z);
+  if(t>=1){pl.st='ground';pl.hitDone=0;pl.n.set(0,0,0);v.set(0,0,0)}break}
  case'climb':case'hang':{const b=pl.b,rope=b.climb=='rope';pl.yaw=Math.atan2(-pl.n.x,-pl.n.z);
   if(pressed.KeyE){release();break}
   if(pl.st=='climb'){q.y+=iz*1.3*dt;p.play(rope?'Climbing A Rope':'Climbing Up Wall',{ts:iz});
    if(q.y<=ground(q.x,q.z,q.y)+.02&&iz<0){pl.st='ground';break}
-   if(q.y>=b.top-1.75){if(rope){release();break}q.x-=pl.n.x*(.35+.7);q.z-=pl.n.z*(.35+.7);q.y=b.top;pl.n.set(0,0,0);pl.vel.set(0,0,0);act('cover to stand',1.1);break}
+   if(q.y>=b.top-1.75){if(rope){release();break}mantle();break}
    if(pressed.KeyH&&!rope)pl.st='hang'}
-  else{
-   pl.cornerCooldown=Math.max(0,(pl.cornerCooldown||0)-dt);
-   q.x+=pl.n.z*ix*1.0*dt;q.z-=pl.n.x*ix*1.0*dt;
-   if(pl.cornerCooldown<=0&&Math.abs(ix)>.15)cornerTraversal.tryTransition(pl,solids,ix);
-   p.play(ix<-.08?'Left Shimmy':ix>.08?'Right Shimmy':'Braced Hang Shimmy',{ts:Math.abs(ix)>.08?Math.abs(ix):1});
-   if(pressed.KeyH||iz>.72){pl.st='climb';pl.cornerCooldown=.12}
-  }
-  attach(.35);if(pl.st=='hang')q.y=pl.b.top-1.48;break}
+  else{q.x+=pl.n.z*ix*1.0*dt;q.z-=pl.n.x*ix*1*dt;p.play(ix<0?'Left Shimmy':ix>0?'Right Shimmy':'Braced Hang Shimmy',{ts:ix||0});if(pressed.KeyH)pl.st='climb'}
+  attach(.35);break}
  case'cover':{pl.yaw=Math.atan2(pl.n.x,pl.n.z);if(pressed.KeyF){pl.crouch=false;act('cover to stand',1.1);break}
   q.x+=-pl.n.z*ix*1.6*dt;q.z+=pl.n.x*ix*1.6*dt;attach(.5);p.play(ix<0?'left cover sneak':ix>0?'right cover sneak':'Crouching Idle');break}
  }
  if(pl.st!='climb'&&pl.st!='hang'&&wet(q.x,q.z)&&q.y<-.45&&pl.st=='ground')pl.st='swim';
- p.root.rotation.y=pl.yaw;
+ p.root.rotation.order='YXZ';p.root.rotation.y=pl.yaw;p.root.rotation.x+=((pl.st=='swim'&&has&&q.y<-1.6?Math.max(-.5,Math.min(.6,-(pl.sy||0)*.13)):0)-p.root.rotation.x)*Math.min(1,8*dt);
 }
 // ---------- enemigo, proyectiles, camara ----------
 function los(a,b){for(let i=1;i<10;i++){const x=a.x+(b.x-a.x)*i/10,z=a.z+(b.z-a.z)*i/10;for(const o of solids)if(o.top>1.5&&x>o.x0&&x<o.x1&&z>o.z0&&z<o.z1)return false}return true}
@@ -294,21 +295,27 @@ function stepWorld(dt){tm+=dt;const q=pl.pos,sp=Math.hypot(pl.vel.x,pl.vel.z);
  $('al').textContent=ch?'Te persiguen':su?'Te sospechan':hidden()?'Oculto':'Sin detectar';$('hpp').style.width=pl.hp+'%';$('o2w').style.display=pl.o2<99?'':'none';$('o2').style.width=pl.o2+'%'}
 const tg=new V3();
 const PAD={on:0,x:0,y:0,sprint:0,jump:0,dive:0};
-const gamepad=new GamepadController({config:CFG.gamepad||{},onStatus:(message,connected)=>{const el=$('padStatus');if(el){el.textContent=message;el.style.color=connected?'var(--ac)':'#9aa';}}});
-function pollPad(dt){gamepad.update(dt,{PAD,pressed,onCamera:(x,y)=>{cy-=x*dt*(CFG.gamepad?.cameraSpeed||3);cp=Math.max(-.2,Math.min(1.25,cp+y*dt*(CFG.gamepad?.cameraSpeedY||2)))}})}
+const gamepad=new GamepadController({config:{...(CFG.gamepad||{}),deadzone:CFG.dz,cameraDeadzone:CFG.dz},
+ onStatus:message=>{const el=$('pad');if(el)el.textContent=message},
+ onConnect:message=>toast(message),onDisconnect:message=>toast(message),
+ onActivity:()=>{$('msg').style.display='none'}});
+function rumble(d,s,w){gamepad.rumble(d,s,w)}
+function pollPad(dt){gamepad.config.deadzone=gamepad.config.cameraDeadzone=CFG.dz;
+ gamepad.update(dt,{PAD,pressed,onCamera:(x,y)=>{cy-=x*dt*(CFG.gamepad?.cameraSpeed||3);cp=Math.max(-.2,Math.min(1.25,cp+y*dt*(CFG.gamepad?.cameraSpeedY||2)))}})}
 let last=0;function loop(t){requestAnimationFrame(loop);const rdt=Math.min((t-last)/1000||0,.05);last=t;pollPad(rdt);fa+=rdt;if(++fc>=45){const av=fa/fc;pc--;if(av>.028&&pr>1){pr=Math.max(1,pr-.25);ren.setPixelRatio(pr);rs();pc=8}else if(av<.0175&&pr<prMax&&pc<=0){pr=Math.min(prMax,pr+.25);ren.setPixelRatio(pr);rs()}fa=fc=0}const dt=hs>0?rdt*.1:rdt;hs-=rdt;
  step(dt);for(const k in pressed)delete pressed[k];E.forEach(e=>{const far=Math.hypot(e.pos.x-pl.pos.x,e.pos.z-pl.pos.z)>75&&e.st!='chase';e.a.root.visible=!far;if(far)return;stepEnemy(e,dt);e.a.mx.update(dt)});stepOrbs(dt);stepWorld(dt);p.update(dt);
  tg.lerp(new V3(pl.pos.x,pl.pos.y+1.5,pl.pos.z),1-Math.exp(-CFG.cam*dt));
  cam.position.set(tg.x+Math.sin(cy)*Math.cos(cp)*cd,Math.max(tg.y+Math.sin(cp)*cd,(wet(tg.x,tg.z)?-60:.1)),tg.z+Math.cos(cy)*Math.cos(cp)*cd);if(pl.st=='drive')cy=ang(cy,pl.yaw+Math.PI,1-Math.exp(-2.2*rdt));{const gy=ground(cam.position.x,cam.position.z,cam.position.y);if(cam.position.y<gy+.4)cam.position.y=gy+.4}sh=Math.max(0,sh-rdt*1.2);cam.position.x+=(Math.random()-.5)*sh*.3;cam.position.y+=(Math.random()-.5)*sh*.3;const sv=Math.hypot(pl.vel.x,pl.vel.z),tf=pl.st=='drive'?60+Math.min(14,sv*.55):(pl.st=='ground'&&sv>5.5)?68:60;cam.fov+=(tf-cam.fov)*Math.min(1,5*rdt);cam.updateProjectionMatrix();cam.lookAt(tg);{const uw=cam.position.y<WL&&wet(cam.position.x,cam.position.z);scene.fog.color.setHex(uw?0x1d5f8a:0x9db7c6);scene.fog.near=uw?1:60;scene.fog.far=uw?24:200;scene.background.setHex(uw?0x1d5f8a:0x9db7c6)}vo*=Math.exp(-16*rdt);p.root.children[0].position.y=vo;
  sun.position.set(pl.pos.x+20,pl.pos.y+32,pl.pos.z+12);sun.target.position.copy(pl.pos);
- $('st').textContent={ground:'En suelo',air:'En el aire',swim:'Nadando',act:'Acción',climb:'Trepando',hang:'Colgado',cover:'Cubierto',dead:'Muerto',manual:'Prueba de animación',drive:'Conduciendo'}[pl.st]+(pl.combat?' (pelea)':'')+(pl.crouch?' (agachado)':'');
+ $('st').textContent={ground:'En suelo',air:'En el aire',swim:'Nadando',act:'Acción',climb:'Trepando',hang:'Colgado',cover:'Cubierto',dead:'Muerto',manual:'Prueba de animación',drive:'Conduciendo',mantle:'Subiendo al borde'}[pl.st]+(pl.combat?' (pelea)':'')+(pl.crouch?' (agachado)':'');
  $('cl').textContent=p.name;ren.render(scene,cam)}
-try{new GLTFLoader().load(new URL('../assets/cyborg.glb',import.meta.url).href,start,undefined,e=>{$('msg').textContent='No se pudo cargar el modelo: '+(e.message||e)})}catch(e){$('msg').textContent='Error: '+e.message}
+try{const glbUrl=new URL('../assets/cyborg.glb',import.meta.url).href;
+ new GLTFLoader().load(glbUrl,start,undefined,e=>{$('msg').textContent='No se pudo cargar el modelo ('+glbUrl+'): '+(e.message||e)})}catch(e){$('msg').textContent='Error: '+e.message}
 
 // ---------- ajustes, UI minimizable y export de config ----------
 (()=>{const D=JSON.parse(JSON.stringify(CFG)),SC=[['Movimiento'],['walk','Caminar',.5,4,.1],['run','Correr',2,8,.1],['sprint','Sprint',4,12,.1],['crouch','Agachado',.5,3,.1],['combat','Postura pelea',1,5,.1],['accel','Aceleración',4,40,1],['decel','Frenado',4,40,1],['turn','Giro del cuerpo',3,30,1],
 ['Salto y aire'],['jump','Fuerza de salto',5,14,.1],['grav','Gravedad',10,45,1],['cutG','Gravedad al soltar salto',20,100,1],['coy','Coyote time (s)',0,.3,.01],['buf','Buffer de salto (s)',0,.4,.01],['air','Control en el aire',1,15,.5],['roll','Velocidad de esquive',3,14,.5],
-['Animación'],['fade','Mezcla entre anims (s)',.02,.4,.01],['anim','Velocidad global de anims',.5,1.8,.05],['atk','Velocidad de ataques',.6,1.8,.05],
+['Agarre, agua y mando'],['ledge','Alcance de agarre',.4,1.2,.05],['swimV','Velocidad al nadar',1,6,.1],['dz','Zona muerta del mando',.05,.35,.01],['Animación'],['fade','Mezcla entre anims (s)',.02,.4,.01],['anim','Velocidad global de anims',.5,1.8,.05],['atk','Velocidad de ataques',.6,1.8,.05],
 ['Cámara'],['sens','Sensibilidad mouse',.001,.006,.0002],['cam','Suavidad de seguimiento',6,40,1],['fov','FOV',40,100,1],['dist','Distancia cámara',2.5,12,.1]],
 box=$('cl2'),ins={};
 const ap=k=>{if(k=='fov'){cam.fov=CFG.fov;cam.updateProjectionMatrix()}if(k=='dist')cd=CFG.dist};

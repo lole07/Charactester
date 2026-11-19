@@ -1,6 +1,6 @@
-# Cyborg — primera entrega modular
+# Cyborg — versión modular v4
 
-Esta carpeta contiene una primera separación funcional del proyecto original. Se conserva una copia intacta del HTML original en `legacy/`.
+Esta carpeta contiene la separación modular del proyecto, actualizada a la **v4** (agarre de bordes, subida, buceo y mando). Se conserva una copia intacta del HTML de un solo archivo v4 en `legacy/`.
 
 ## Qué se conserva
 
@@ -29,20 +29,29 @@ CYBORG_Modular/
 └── legacy/                     # HTML original intacto
 ```
 
-## Ejecutar localmente
+## Publicar y abrir en línea (GitHub Pages)
 
-Los módulos ES y `fetch()` requieren servir el proyecto por HTTP(S); no abrir `index.html` directamente con `file://`.
+El proyecto no necesita `localhost`: son archivos estáticos que usan rutas relativas.
 
-Con Python instalado:
+1. Sube **el contenido de esta carpeta** a la raíz del repositorio (`index.html`, `assets/`, `src/`, `config/`, `docs/`, `legacy/`, `.nojekyll`). `index.html` debe quedar en la raíz del repo.
+2. En GitHub: **Settings → Pages → Build and deployment → Deploy from a branch**, rama `main`, carpeta `/ (root)`.
+3. Espera 1–2 minutos y abre `https://TU-USUARIO.github.io/TU-REPO/`.
+
+Notas:
+
+- No abras `index.html` desde `raw.githubusercontent.com` ni desde la vista `blob` de GitHub: esas URLs no sirven módulos ES. Tampoco con doble clic (`file://`).
+- Si lo subes dentro de una subcarpeta (`CYBORG_Modular/`), la URL será `https://TU-USUARIO.github.io/TU-REPO/CYBORG_Modular/`.
+- Si algo falla al cargar, la pantalla muestra el motivo en lugar de quedarse en «Cargando».
+- Sin servidor ni repo: `legacy/Cyborg_-_Campo_de_pruebas_v4.html` es la versión de un solo archivo y abre con doble clic.
+
+### Servidor local (opcional)
 
 ```bash
 cd CYBORG_Modular
 python -m http.server 8000
 ```
 
-Abrir `http://localhost:8000`.
-
-También puede alojarse en cualquier hosting estático HTTPS. Three.js y sus addons se cargan desde jsDelivr; para producción conviene fijar y alojar las dependencias localmente.
+Abrir `http://localhost:8000`. Three.js y sus addons se cargan desde jsDelivr (versión fija 0.128.0).
 
 ## Mando Bluetooth
 
@@ -78,19 +87,19 @@ actor.update(deltaSeconds);
 
 El GLB y el JSON son activos portables y pueden importarse/adaptarse en Unity o Unreal. `CyborgController.js` es un controlador JavaScript de Three.js: no se ejecuta directamente dentro de Unity/Unreal. Para esas plataformas se debe implementar un adaptador equivalente en C# (Unity) o C++/Blueprints (Unreal), reutilizando el mismo modelo, nombres de animación y parámetros de configuración.
 
-## Agarre automático de bordes (v2)
+## Agarre de esquinas, subida y buceo (v4)
 
-- Al saltar hacia una plataforma, el sistema comprueba automáticamente la altura de la cornisa, la proximidad lateral y la orientación del personaje.
-- Si la cornisa es alcanzable mientras el personaje cae o se aproxima al ápice del salto, entra en `hang` y alinea el cuerpo con el borde.
-- En `hang`, izquierda/derecha desplazan al personaje; al llegar a una esquina compatible, `CornerTraversalSystem` cambia a la cara perpendicular sin pedir otro botón.
-- `W` (o avanzar con el mando) inicia la subida; `E` permite soltarse. `H` conserva la transición manual de colgado a escalada que ya existía.
-- La detección usa los AABB de `solids` que ya emplea el sistema de colisiones. No todos los elementos del escenario son automáticamente escalables: deben tener una cara y altura alcanzables.
+- Al saltar hacia un borde alto sólido (`ledge()`), el personaje se agarra solo si el borde está a su alcance (ajuste «Alcance de agarre») y mira hacia él.
+- Colgado: `A/D` desplazan, `W` o `Espacio` suben (`mantle()` con la animación `cover to stand`), `C`/`E` o empujar atrás sueltan. `H` conserva el paso a escalada.
+- Buceo: `C` en la superficie = zambullida; con mando/ratón, mirar abajo/arriba sumerge o emerge. El oxígeno se recupera al respirar y la velocidad al nadar es ajustable («Velocidad al nadar»).
+- Mando: zona muerta radial ajustable, selección del último mando activo, aviso de mapeo no estándar y vibración (golpes y agarre) cuando el navegador la soporta.
+- Nuevos ajustes en el panel: Alcance de agarre, Velocidad al nadar, Zona muerta del mando (valores por defecto en `config/cyborg.json`: `ledge`, `swimV`, `dz`).
 
-Los umbrales están centralizados en el constructor de `EdgeDetectionSystem` y `CornerTraversalSystem`, para poder ajustarlos sin tocar el bucle de gameplay.
+`src/systems/EdgeDetectionSystem.js` y `CornerTraversalSystem.js` (v2) siguen en la carpeta pero ya no se importan: la v4 resuelve el agarre dentro de `main.js`.
 
 ## Próxima fase recomendada
 
 1. Extraer `MovementSystem`, `ClimbingSystem`, `SwimmingSystem`, `CombatSystem`, `CameraController` y `World/AI` desde `main.js`, manteniendo pruebas de regresión por estado.
-2. Implementar detección de borde y esquinas como estados nuevos, con raycasts y transiciones de animación verificadas contra los clips que realmente contiene el GLB.
+2. Mover `ledge()`/`mantle()` a un sistema propio y añadir transición entre esquinas, con raycasts y transiciones de animación verificadas contra los clips que realmente contiene el GLB.
 3. Completar el buceo con profundidad, flotabilidad, superficie y oxígeno, extendiendo la mecánica existente.
 4. Añadir perfiles de mando Xbox/PlayStation/genérico, remapeo desde UI y vibración cuando `GamepadHapticActuator` esté disponible.

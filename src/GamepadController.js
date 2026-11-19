@@ -5,56 +5,85 @@ const DEFAULT_BUTTON_MAP = {
   12: 'Digit1', 13: 'Digit3', 14: 'Digit4', 15: 'Digit2'
 };
 
+const shortName = (gamepad, max) => (gamepad?.id || 'Mando genérico').replace(/\s*\(.*$/, '').trim().slice(0, max);
+const nonStandard = gamepad => (gamepad?.mapping === 'standard' ? '' : ' · mapeo no estándar');
+
 export class GamepadController {
-  constructor({ config = {}, onStatus = null } = {}) {
-    this.config = { deadzone: 0.16, cameraDeadzone: 0.14, cameraSpeed: 3, cameraSpeedY: 2, ...config };
+  /**
+   * @param {object} options
+   * @param {object} [options.config]        deadzone, cameraDeadzone, cameraSpeed, cameraSpeedY, buttonMap
+   * @param {(message:string, connected:boolean)=>void} [options.onStatus]  texto del HUD
+   * @param {(message:string)=>void} [options.onConnect]     aviso al conectar
+   * @param {(message:string)=>void} [options.onDisconnect]  aviso al desconectar
+   * @param {()=>void} [options.onActivity]  primera vez que el mando mueve un stick o pulsa un botón
+   */
+  constructor({ config = {}, onStatus = null, onConnect = null, onDisconnect = null, onActivity = null } = {}) {
+    this.config = { deadzone: 0.15, cameraDeadzone: 0.15, cameraSpeed: 3, cameraSpeedY: 2, ...config };
     this.onStatus = onStatus;
+    this.onConnect = onConnect;
+    this.onDisconnect = onDisconnect;
+    this.onActivity = onActivity;
     this.previousButtons = new Map();
     this.activeIndex = null;
     this.lastStatus = '';
+    this.activated = false;
     this.buttonMap = { ...DEFAULT_BUTTON_MAP, ...(config.buttonMap || {}) };
     window.addEventListener('gamepadconnected', event => {
       this.activeIndex = event.gamepad.index;
       this.previousButtons.clear();
-      this.#status(event.gamepad, true);
+      const note = event.gamepad.mapping === 'standard' ? '' : ' (mapeo no estándar, los botones pueden variar)';
+      this.onConnect?.(`🎮 Mando conectado: ${shortName(event.gamepad, 36)}${note}`);
+      this.rumble(200, 0.4, 0.4);
     });
     window.addEventListener('gamepaddisconnected', event => {
       if (this.activeIndex === event.gamepad.index) this.activeIndex = null;
       this.previousButtons.clear();
-      this.onStatus?.('Mando desconectado', false);
+      this.onDisconnect?.('🎮 Mando desconectado');
     });
   }
 
-  #status(gamepad, connected) {
-    const name = gamepad?.id?.trim() || 'Mando genérico';
-    const message = connected ? `Mando conectado: ${name}` : 'Mando: buscando…';
+  #status(gamepad) {
+    const message = gamepad
+      ? `🎮 ${shortName(gamepad, 32)}${nonStandard(gamepad)}`
+      : '🎮 Pulsa un botón del mando para detectarlo';
     if (message !== this.lastStatus) {
       this.lastStatus = message;
-      this.onStatus?.(message, connected);
+      this.onStatus?.(message, Boolean(gamepad));
     }
   }
 
   #axisPair(x, y, deadzone) {
-    const magnitude = Math.min(1, Math.hypot(x || 0, y || 0));
-    if (magnitude <= deadzone) return [0, 0];
-    const scaled = (magnitude - deadzone) / (1 - deadzone);
-    return [(x / magnitude) * scaled, (y / magnitude) * scaled];
+    const magnitude = Math.hypot(x || 0, y || 0);
+    if (magnitude < deadzone) return [0, 0];
+    const scaled = Math.min(1, (magnitude - deadzone) / (1 - deadzone)) / magnitude;
+    return [x * scaled, y * scaled];
+  }
+
+  /** Vibración (si el navegador y el mando la soportan). */
+  rumble(duration, strong, weak) {
+    try {
+      const pad = navigator.getGamepads?.()[this.activeIndex];
+      const actuator = pad && (pad.vibrationActuator || (pad.hapticActuators && pad.hapticActuators[0]));
+      if (actuator?.playEffect) {
+        actuator.playEffect('dual-rumble', { duration, strongMagnitude: strong, weakMagnitude: weak }).catch(() => {});
+      }
+    } catch (_) { /* sin vibración */ }
   }
 
   update(_dt, { PAD, pressed, onCamera } = {}) {
-    const pads = navigator.getGamepads ? Array.from(navigator.getGamepads()) : [];
-    let pad = this.activeIndex == null ? null : pads[this.activeIndex];
-    if (!pad?.connected) pad = pads.find(candidate => candidate?.connected) || null;
+    const pads = navigator.getGamepads ? Array.from(navigator.getGamepads()).filter(p => p?.connected) : [];
+    let pad = null;
+    for (const candidate of pads) if (!pad || candidate.timestamp > pad.timestamp) pad = candidate;
     if (!pad) {
       PAD.on = false;
       PAD.x = PAD.y = PAD.sprint = PAD.jump = PAD.dive = 0;
-      if (this.lastStatus !== 'Mando: buscando…') this.#status(null, false);
+      this.#status(null);
       return;
     }
 
     this.activeIndex = pad.index;
     PAD.on = true;
-    this.#status(pad, true);
+    this.#status(pad);
     const [leftX, leftY] = this.#axisPair(pad.axes[0] || 0, pad.axes[1] || 0, this.config.deadzone);
     const [rightX, rightY] = this.#axisPair(pad.axes[2] || 0, pad.axes[3] || 0, this.config.cameraDeadzone);
     PAD.x = leftX;
@@ -65,6 +94,10 @@ export class GamepadController {
     PAD.sprint = (button(7)?.value || 0) > 0.4 ? 1 : 0;
     PAD.jump = Boolean(button(0)?.pressed);
     PAD.dive = Boolean(button(1)?.pressed);
+    if (!this.activated && (leftX || leftY || pad.buttons.some(b => b.pressed))) {
+      this.activated = true;
+      this.onActivity?.();
+    }
     for (const [indexText, key] of Object.entries(this.buttonMap)) {
       const index = Number(indexText);
       const down = Boolean(button(index)?.pressed);
