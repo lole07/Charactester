@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # Cyborg — primera entrega modular
 
 Esta carpeta contiene una primera separación funcional del proyecto original. Se conserva una copia intacta del HTML original en `legacy/`.
@@ -85,6 +84,3 @@ El GLB y el JSON son activos portables y pueden importarse/adaptarse en Unity o 
 2. Implementar detección de borde y esquinas como estados nuevos, con raycasts y transiciones de animación verificadas contra los clips que realmente contiene el GLB.
 3. Completar el buceo con profundidad, flotabilidad, superficie y oxígeno, extendiendo la mecánica existente.
 4. Añadir perfiles de mando Xbox/PlayStation/genérico, remapeo desde UI y vibración cuando `GamepadHapticActuator` esté disponible.
-=======
-# Charactester
->>>>>>> 6c5d9def25068113e662863c0754d74f1dac28a3
