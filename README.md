@@ -103,3 +103,8 @@ El GLB y el JSON son activos portables y pueden importarse/adaptarse en Unity o 
 2. Mover `ledge()`/`mantle()` a un sistema propio y añadir transición entre esquinas, con raycasts y transiciones de animación verificadas contra los clips que realmente contiene el GLB.
 3. Completar el buceo con profundidad, flotabilidad, superficie y oxígeno, extendiendo la mecánica existente.
 4. Añadir perfiles de mando Xbox/PlayStation/genérico, remapeo desde UI y vibración cuando `GamepadHapticActuator` esté disponible.
+
+
+## Corrección de arranque (19-11-2026)
+
+Se corrigió la importación de SkeletonUtils en `src/main.js`: se importa el módulo como namespace (`import * as SkeletonUtils`) y se utiliza `SkeletonUtils.clone(gltf.scene)`. No debe cambiarse por `import { clone }` ni por `import { SkeletonUtils }`, porque el módulo de Three.js r128 no exporta esos nombres de esa manera. También se añadió un parámetro de versión al script principal en `index.html` para evitar que el navegador reutilice el `main.js` anterior desde caché.
